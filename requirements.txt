@@ -1,0 +1,5 @@
+numpy==2.3.2
+torch_geometric==2.7.0
+opencv-python==4.12.0.88
+networkx==3.5
+scipy==1.16.1

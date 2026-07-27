@@ -1,0 +1,1 @@
+# Eğitim döngüsü (Loss, Optimizer)

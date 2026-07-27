@@ -1,0 +1,1 @@
+# OpenCV ile görüntü kırpma (veya SAM 2)

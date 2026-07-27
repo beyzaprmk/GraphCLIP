@@ -1,0 +1,1 @@
+# ViT/DINOv2 özellik çıkarımı
