@@ -1,26 +1,43 @@
-# Abstract Base Classes (ABC)
-
 from abc import ABC, abstractmethod
 from typing import List
-import torch
-from .entities import SceneGraphDTO, NodeEntity
+from core.entities import SceneGraph
 
 class IDataParser(ABC):
-    """Kişi 2'nin uygulaması gereken arayüz"""
-    
+    """
+    Veri ve Graf Mühendisi için zorunlu arayüz.
+    Görevi: JSON dosyalarını okuyup ilişkileri ayrıştırmak.
+    """
     @abstractmethod
-    def get_scene_graph(self, image_id: str) -> SceneGraphDTO:
+    def parse_image(self, image_id: str) -> SceneGraph:
+        """
+        Girdi Bir görüntünün ID'si .
+        Çıktı İçerisinde düğümlerin (labels/bboxes) ve kenarların 
+               olduğu ama tensörlerin HENÜZ OLMADIĞI ham bir SceneGraph nesnesi.
+        """
         pass
-
-    @abstractmethod
-    def get_all_image_ids(self) -> List[str]:
-        pass
-
 
 class IVisionExtractor(ABC):
-    """Kişi 3'ün uygulaması gereken arayüz"""
-    
+    """
+    Görüntü İşleme Sorumlusu için zorunlu arayüz.
+    Görevi Ham SceneGraph'ı alıp nesneleri kırpmak ve ViT/SAM 2'den geçirmek.
+    """
     @abstractmethod
-    def extract_node_features(self, image_path: str, nodes: List[NodeEntity]) -> torch.Tensor:
-        """Görüntüyü ve düğümleri alır, N x 512 boyutunda tensör döner."""
+    def extract_features(self, graph: SceneGraph) -> SceneGraph:
+        """
+        Girdi: Tensörleri eksik olan SceneGraph.
+        Çıktı Kırpılan her nesnenin ViT  modelinden geçirilip 
+               'feature_tensor' (512 boyutlu) alanının doldurulduğu ZENGİNLEŞTİRİLMİŞ SceneGraph.
+        """
+        pass
+
+class IGraphFusionModel(ABC):
+    """
+   Sistem Mimarı tasarlayacağın üst seviye GraphCLIP modelinin arayüzü.
+    """
+    @abstractmethod
+    def forward(self, graph: SceneGraph):
+        """
+        Girdi Tamamen doldurulmuş  SceneGraph.
+        Çıktı GNN ve OpenCLIP katmanlarından geçmiş Fusion uzamsal vektör.
+        """
         pass
