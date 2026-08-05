@@ -1,0 +1,12 @@
+venv
+env/
+__pycache__/
+
+dataset/
+
+test_converter.py
+test_vocab.py
+relation/resources/relationship_synsets.json
+relation/resources/relationships.json
+relation/resources/final_vocab.json
+
