@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import torch
 from torch_geometric.data import Data
 
@@ -7,14 +9,17 @@ from core.entities import SceneGraph
 
 
 class GraphConverter:
-    """
-    SceneGraph -> PyTorch Geometric Data dönüştürücüsü.
-    """
+   
+    def __init__(self, feature_dir: str):
 
-    def convert(self, graph: SceneGraph) -> Data:
-        
+        self.feature_dir = Path(feature_dir)
 
-        x = self._build_node_features(graph)
+    def convert(
+        self,
+        graph: SceneGraph
+    ) -> Data:
+
+        x = self._build_node_features(graph.image_id)
 
         edge_index = self._build_edge_index(graph)
 
@@ -28,21 +33,28 @@ class GraphConverter:
 
     def _build_node_features(
         self,
-        graph: SceneGraph
+        image_id: str
     ) -> torch.Tensor:
+        
 
-        features = []
+        feature_path = self.feature_dir / f"{image_id}.pt"
 
-        for node in graph.nodes:
+        if not feature_path.exists():
+            raise FileNotFoundError(
+                f"Feature dosyası bulunamadı: {feature_path}"
+            )
 
-            if node.feature_tensor is None:
-                raise ValueError(
-                    f"Node {node.node_id} has no feature tensor."
-                )
+        features = torch.load(
+            feature_path,
+            map_location="cpu"
+        )
 
-            features.append(node.feature_tensor)
+        if not isinstance(features, torch.Tensor):
+            raise TypeError(
+                f"{feature_path} bir Tensor içermiyor."
+            )
 
-        return torch.stack(features)
+        return features.float()
 
     def _build_edge_index(
         self,
@@ -55,7 +67,6 @@ class GraphConverter:
         for edge in graph.edges:
 
             sources.append(edge.source_id)
-
             targets.append(edge.target_id)
 
         return torch.tensor(
@@ -68,7 +79,13 @@ class GraphConverter:
         graph: SceneGraph
     ) -> torch.Tensor:
 
-        return torch.zeros(
-            len(graph.edges),
+        relation_ids = []
+
+        for edge in graph.edges:
+
+            relation_ids.append(edge.relation_id)
+
+        return torch.tensor(
+            relation_ids,
             dtype=torch.long
         )
