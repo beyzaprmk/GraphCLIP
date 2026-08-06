@@ -9,6 +9,7 @@ test_converter.py
 test_vocab.py
 test_fusion.py
 test_clip.py
+test_graph.py
 
 relation/resources/*
 
