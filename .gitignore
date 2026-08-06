@@ -7,6 +7,7 @@ dataset/
 test_model.py
 test_converter.py
 test_vocab.py
+test_fusion.py
 
 relation/resources/*
 
