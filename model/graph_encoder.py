@@ -1,19 +1,21 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+
+from torch_geometric.nn import (
+    TransformerConv,
+    AttentionalAggregation
+)
 
 
 class RelationEmbedding(nn.Module):
-    """
-    Relation ID'lerini öğrenilebilir embedding vektörlerine dönüştürür.
-
-    """
+   
 
     def __init__(
         self,
         num_relations: int,
         embedding_dim: int = 64
     ):
-
         super().__init__()
 
         self.embedding = nn.Embedding(
@@ -21,19 +23,28 @@ class RelationEmbedding(nn.Module):
             embedding_dim=embedding_dim
         )
 
+        self.norm = nn.LayerNorm(
+            embedding_dim
+        )
+
     def forward(
         self,
         edge_attr: torch.Tensor
     ) -> torch.Tensor:
 
-        return self.embedding(edge_attr)
+        edge_embedding = self.embedding(
+            edge_attr
+        )
 
+        edge_embedding = self.norm(
+            edge_embedding
+        )
 
-import torch.nn.functional as F
-from torch_geometric.nn import TransformerConv
+        return edge_embedding
 
 
 class GraphBackbone(nn.Module):
+    
 
     def __init__(
 
@@ -61,6 +72,10 @@ class GraphBackbone(nn.Module):
 
         )
 
+        self.norm1 = nn.LayerNorm(
+            hidden_dim
+        )
+
         self.conv2 = TransformerConv(
 
             in_channels=hidden_dim,
@@ -71,7 +86,13 @@ class GraphBackbone(nn.Module):
 
         )
 
-        self.dropout = nn.Dropout(dropout)
+        self.norm2 = nn.LayerNorm(
+            hidden_dim
+        )
+
+        self.dropout = nn.Dropout(
+            dropout
+        )
 
     def forward(
 
@@ -95,6 +116,8 @@ class GraphBackbone(nn.Module):
 
         )
 
+        x = self.norm1(x)
+
         x = F.gelu(x)
 
         x = self.dropout(x)
@@ -109,42 +132,79 @@ class GraphBackbone(nn.Module):
 
         )
 
-        return x    
+        x = self.norm2(x)
 
-
-
-from torch_geometric.nn import global_mean_pool
-import torch.nn as nn
+        return x
 
 
 class GraphEncoder(nn.Module):
     
 
     def __init__(
+
         self,
+
         relation_embedding: RelationEmbedding,
-        backbone: GraphBackbone
+
+        backbone: GraphBackbone,
+
+        hidden_dim: int = 512
+
     ):
+
         super().__init__()
 
         self.relation_embedding = relation_embedding
+
         self.backbone = backbone
 
-    def forward(self, data):
+        self.readout = AttentionalAggregation(
+
+            gate_nn=nn.Sequential(
+
+                nn.Linear(
+                    hidden_dim,
+                    hidden_dim // 2
+                ),
+
+                nn.GELU(),
+
+                nn.Linear(
+                    hidden_dim // 2,
+                    1
+                )
+
+            )
+
+        )
+
+    def forward(
+        self,
+        data
+    ):
 
         edge_embedding = self.relation_embedding(
+
             data.edge_attr
+
         )
 
         node_embedding = self.backbone(
+
             x=data.x,
+
             edge_index=data.edge_index,
+
             edge_attr=edge_embedding
+
         )
 
-        graph_embedding = global_mean_pool(
+        graph_embedding = self.readout(
+
             node_embedding,
+
             data.batch
+
         )
 
         return graph_embedding
