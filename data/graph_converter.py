@@ -10,9 +10,9 @@ from core.entities import SceneGraph
 
 class GraphConverter:
    
-    def __init__(self, feature_dir: str):
-
+    def __init__(self, feature_dir: str, relation_vocab=None):
         self.feature_dir = Path(feature_dir)
+        self.relation_vocab = relation_vocab
 
     def convert(
         self,

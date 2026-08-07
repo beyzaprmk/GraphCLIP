@@ -1,9 +1,13 @@
 import json
 from pathlib import Path
-
-from vocabulary import RelationVocabulary
-
+import sys
+import os 
 BASE_DIR = Path(__file__).resolve().parent
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from relation.vocabulary import RelationVocabulary
+
+
 
 SYNSET_PATH = BASE_DIR / "resources" / "relationship_synsets.json"
 RELATIONSHIP_PATH = BASE_DIR / "resources" / "relationships.json"
