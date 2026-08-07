@@ -3,32 +3,39 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
+import torch
 from PIL import Image
+
 from torch.utils.data import Dataset
 
-from torch_geometric.data import Data
-
-from core.entities import SceneGraph
-from data.vg_parser import VisualGenomeParser
 from data.graph_converter import GraphConverter
 
 
 class GraphDataset(Dataset):
-   
+    
 
     def __init__(
+
         self,
+
         image_ids: list[int],
-        parser: VisualGenomeParser,
+
+        graph_dir: str,
+
         graph_converter: GraphConverter,
+
         images_dir: str,
+
         captions: dict[int, str],
-        image_transform: Callable | None = None,
+
+        image_transform: Callable | None = None
+
     ):
 
         self.image_ids = image_ids
 
-        self.parser = parser
+        self.graph_dir = Path(graph_dir)
+
         self.graph_converter = graph_converter
 
         self.images_dir = Path(images_dir)
@@ -48,56 +55,117 @@ class GraphDataset(Dataset):
 
         image_id = self.image_ids[index]
 
-        image = self._load_image(image_id)
+        graph = self._load_graph(
+            image_id
+        )
 
-        caption = self._load_caption(image_id)
-
-        graph = self._load_graph(image_id)
+        caption = self._load_caption(
+            image_id
+        )
 
         return {
 
-            "image": image,
+            "graph": graph,
 
             "text": caption,
-
-            "graph": graph,
 
             "image_id": image_id
 
         }
-
     def _load_image(
+
         self,
+
         image_id: int
+
     ):
 
-        image_path = self.images_dir / f"{image_id}.jpg"
+        image_path = (
 
-        image = Image.open(image_path).convert("RGB")
+            self.images_dir /
+
+            f"{image_id}.jpg"
+
+        )
+
+        image = Image.open(
+
+            image_path
+
+        ).convert("RGB")
 
         if self.image_transform is not None:
-            image = self.image_transform(image)
+
+            image = self.image_transform(
+
+                image
+
+            )
 
         return image
 
-    def _load_caption(
+    def _load_graph(
+
         self,
+
         image_id: int
+
+    ):
+
+        graph_path = (
+
+            self.graph_dir /
+
+            f"{image_id}.pt"
+
+        )
+
+        if not graph_path.exists():
+
+            raise FileNotFoundError(
+
+                f"SceneGraph bulunamadı: {graph_path}"
+
+            )
+
+        try:
+
+            scene_graph = torch.load(
+
+                graph_path,
+
+                map_location="cpu",
+
+                weights_only=False
+
+            )
+
+        except Exception as e:
+
+            raise RuntimeError(
+
+                f"SceneGraph yüklenemedi: {graph_path}"
+
+            ) from e
+
+        return self.graph_converter.convert(
+
+            scene_graph
+
+        )
+
+    def _load_caption(
+
+        self,
+
+        image_id: int
+
     ) -> str:
 
-        return self.captions[image_id]
+        return self.captions.get(
 
-    def _load_graph(
-        self,
-        image_id: int
-    ) -> Data:
+            image_id,
 
-        scene_graph: SceneGraph = self.parser.parse_image(
-            str(image_id)
+            ""
+
         )
-
-        pyg_graph = self.graph_converter.convert(
-            scene_graph
-        )
-
-        return pyg_graph

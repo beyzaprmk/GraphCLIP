@@ -1,77 +1,119 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import torch
 from torch_geometric.data import Data
 
 from core.entities import SceneGraph
+from relation.vocabulary import RelationVocabulary
 
 
 class GraphConverter:
-   
-    def __init__(self, feature_dir: str):
+    
 
-        self.feature_dir = Path(feature_dir)
+    def __init__(
+        self,
+        relation_vocab: RelationVocabulary
+    ):
+
+        self.relation_vocab = relation_vocab
+
+
 
     def convert(
         self,
         graph: SceneGraph
     ) -> Data:
 
-        x = self._build_node_features(graph.image_id)
-
-        edge_index = self._build_edge_index(graph)
-
-        edge_attr = self._build_edge_attr(graph)
-
         return Data(
-            x=x,
-            edge_index=edge_index,
-            edge_attr=edge_attr
+
+            x=self._build_node_features(graph),
+
+            edge_index=self._build_edge_index(graph),
+
+            edge_attr=self._build_edge_attr(graph)
+
         )
+
 
     def _build_node_features(
         self,
-        image_id: str
+        graph: SceneGraph
     ) -> torch.Tensor:
-        
 
-        feature_path = self.feature_dir / f"{image_id}.pt"
+        if len(graph.nodes) == 0:
 
-        if not feature_path.exists():
-            raise FileNotFoundError(
-                f"Feature dosyası bulunamadı: {feature_path}"
+            raise ValueError(
+
+                f"Image {graph.image_id} contains no nodes."
+
             )
 
-        features = torch.load(
-            feature_path,
-            map_location="cpu"
+        features = []
+
+        for node in graph.nodes:
+
+            if node.feature_tensor is None:
+
+                raise ValueError(
+
+                    f"Image {graph.image_id}: "
+                    f"Node {node.node_id} has no feature tensor."
+
+                )
+
+            features.append(
+
+                node.feature_tensor.float()
+
+            )
+
+        return torch.stack(
+
+            features,
+
+            dim=0
+
         )
-
-        if not isinstance(features, torch.Tensor):
-            raise TypeError(
-                f"{feature_path} bir Tensor içermiyor."
-            )
-
-        return features.float()
 
     def _build_edge_index(
         self,
         graph: SceneGraph
     ) -> torch.Tensor:
 
-        sources = []
-        targets = []
+        if len(graph.edges) == 0:
 
-        for edge in graph.edges:
+            return torch.empty(
 
-            sources.append(edge.source_id)
-            targets.append(edge.target_id)
+                (2, 0),
+
+                dtype=torch.long
+
+            )
 
         return torch.tensor(
-            [sources, targets],
+
+            [
+
+                [
+
+                    edge.source_id
+
+                    for edge in graph.edges
+
+                ],
+
+                [
+
+                    edge.target_id
+
+                    for edge in graph.edges
+
+                ]
+
+            ],
+
             dtype=torch.long
+
         )
 
     def _build_edge_attr(
@@ -79,13 +121,40 @@ class GraphConverter:
         graph: SceneGraph
     ) -> torch.Tensor:
 
+        if len(graph.edges) == 0:
+
+            return torch.empty(
+
+                (0,),
+
+                dtype=torch.long
+
+            )
+
         relation_ids = []
 
         for edge in graph.edges:
 
-            relation_ids.append(edge.relation_id)
+            relation_label = edge.relation_label.strip().lower()
+
+            relation_id = self.relation_vocab.relation_to_id.get(
+
+                relation_label,
+
+                0
+
+            )
+
+            relation_ids.append(
+
+                relation_id
+
+            )
 
         return torch.tensor(
+
             relation_ids,
+
             dtype=torch.long
+
         )

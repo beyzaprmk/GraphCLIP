@@ -1,77 +1,188 @@
+from __future__ import annotations
+
 import os
-import sys
 from pathlib import Path
-
-sys.path.append(str(Path(__file__).resolve().parent.parent))
-
 from dataclasses import replace
+
 import cv2
 import torch
+
+from transformers import (
+    CLIPProcessor,
+    CLIPVisionModelWithProjection
+)
+
 from core.entities import SceneGraph
 from core.interfaces import IVisionExtractor
-from transformers import CLIPProcessor, CLIPVisionModelWithProjection
+
 from vision.cropper import ImageCropper
 
 
 class ViTFeatureExtractor(IVisionExtractor):
-  """Görsel Öznitelik Çıkarıcı:
+    
 
-  SceneGraph içindeki her bir düğümü kırpar, ViT'ten geçirir ve
-  zenginleştirilmiş yeni bir SceneGraph döndürür.
-  """
+    def __init__(
 
-  def __init__(
-      self,
-      images_dir: str = "data/visual_genome/images",
-      model_name: str = "openai/clip-vit-base-patch32",
-      device: str = None,
-  ):
-    self.images_dir = images_dir
-    self.device = device if device else (
-        "cuda" if torch.cuda.is_available() else "cpu"
-    )
-    print(
-        f"Vision Extractor yükleniyor ({model_name}) - Çalıştırma Cihazı:"
-        f" {self.device}..."
-    )
+        self,
 
-    self.processor = CLIPProcessor.from_pretrained(model_name)
-    self.model = (
-        CLIPVisionModelWithProjection.from_pretrained(
-            model_name, use_safetensors=True
+        images_dir: str,
+
+        model_name: str = "openai/clip-vit-base-patch32",
+
+        device: str | None = None
+
+    ):
+
+        self.images_dir = Path(images_dir)
+
+        self.device = self._resolve_device(device)
+
+        print("=" * 60)
+        print("Vision Extractor")
+        print(f"Model : {model_name}")
+        print(f"Device: {self.device}")
+        print("=" * 60)
+
+        self.processor = CLIPProcessor.from_pretrained(
+            model_name
         )
-        .to(self.device)
-        .eval()
-    )
-    print("Vision Extractor başarıyla yüklendi ve hazır!")
 
-  def extract_features(self, graph: SceneGraph) -> SceneGraph:
-    """Arayüzün zorunlu tuttuğu tek parametreli metot."""
-    image_path = os.path.join(self.images_dir, f"{graph.image_id}.jpg")
-
-    # Disk I/O darboğazını önlemek için görüntü tek seferde belleğe okunur
-    img_mat = cv2.imread(image_path)
-    if img_mat is None:
-      raise FileNotFoundError(f"Görüntü okunamadı: {image_path}")
-
-    yeni_nodelar = []
-
-    for node in graph.nodes:
-      cropped_image = ImageCropper.crop_bounding_box(img_mat, node.bbox)
-      inputs = self.processor(images=cropped_image, return_tensors="pt").to(
-          self.device
-      )
-
-      with torch.no_grad():
-        outputs = self.model(**inputs)
-        image_features = outputs.image_embeds
-        image_features = image_features / image_features.norm(
-            dim=-1, keepdim=True
+        self.model = (
+            CLIPVisionModelWithProjection
+            .from_pretrained(
+                model_name,
+                use_safetensors=True
+            )
+            .to(self.device)
+            .eval()
         )
-        feature_tensor = image_features.squeeze(0).cpu()
 
-      guncellenmis_node = replace(node, feature_tensor=feature_tensor)
-      yeni_nodelar.append(guncellenmis_node)
+        for parameter in self.model.parameters():
+            parameter.requires_grad = False
 
-    return replace(graph, nodes=yeni_nodelar)
+    @staticmethod
+    def _resolve_device(
+        device: str | None
+    ) -> str:
 
+        if device is not None:
+            return device
+
+        if torch.backends.mps.is_available():
+            return "mps"
+
+        if torch.cuda.is_available():
+            return "cuda"
+
+        return "cpu"
+
+    def extract_features(
+
+        self,
+
+        graph: SceneGraph
+
+    ) -> SceneGraph:
+
+        image_path = (
+            self.images_dir /
+            f"{graph.image_id}.jpg"
+        )
+
+        image = cv2.imread(str(image_path))
+
+        if image is None:
+
+            raise FileNotFoundError(
+
+                f"Image not found: {image_path}"
+
+            )
+
+        enriched_nodes = []
+
+        for node in graph.nodes:
+
+            feature = self._extract_node_feature(
+
+                image=image,
+
+                node=node
+
+            )
+
+            enriched_nodes.append(
+
+                replace(
+
+                    node,
+
+                    feature_tensor=feature
+
+                )
+
+            )
+
+        return replace(
+
+            graph,
+
+            nodes=enriched_nodes
+
+        )
+
+    def _extract_node_feature(
+
+        self,
+
+        image,
+
+        node
+
+    ) -> torch.Tensor:
+
+        cropped = ImageCropper.crop_bounding_box(
+
+            image,
+
+            node.bbox
+
+        )
+
+        inputs = self.processor(
+
+            images=cropped,
+
+            return_tensors="pt"
+
+        )
+
+        inputs = {
+
+            key: value.to(self.device)
+
+            for key, value in inputs.items()
+
+        }
+
+        with torch.no_grad():
+
+            outputs = self.model(
+
+                **inputs
+
+            )
+
+            feature = outputs.image_embeds.squeeze(0)
+
+            feature = torch.nn.functional.normalize(
+
+                feature,
+
+                p=2,
+
+                dim=0
+
+            )
+
+        return feature.cpu()

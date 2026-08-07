@@ -22,14 +22,24 @@ class Trainer:
         checkpoint_dir: str = "checkpoints",
         temperature: float = 0.07
     ):
+        self.temperature = temperature
+        if device is None:
 
-        self.device = torch.device(
-            device if device else (
-                "cuda"
-                if torch.cuda.is_available()
-                else "cpu"
-            )
-        )
+            if torch.backends.mps.is_available():
+
+                self.device = torch.device("mps")
+
+            elif torch.cuda.is_available():
+
+                self.device = torch.device("cuda")
+
+            else:
+
+                self.device = torch.device("cpu")
+
+        else:
+
+            self.device = torch.device(device)
 
         self.model = model.to(self.device)
 
@@ -101,6 +111,8 @@ class Trainer:
         return loss
 
 
+    
+
     def train_epoch(
         self
     ) -> float:
@@ -109,9 +121,10 @@ class Trainer:
 
         running_loss = 0.0
 
-        for batch in self.train_loader:
+        for i, batch in enumerate(self.train_loader):
 
-            image = batch["image"].to(self.device)
+            if i % 10 == 0:
+                print(f"Batch {i}/{len(self.train_loader)}")
 
             graph = batch["graph"].to(self.device)
 
@@ -120,8 +133,6 @@ class Trainer:
             self.optimizer.zero_grad()
 
             outputs = self.model(
-
-                image,
 
                 text,
 
@@ -139,17 +150,11 @@ class Trainer:
 
             running_loss += loss.item()
 
-        
-
         epoch_loss = running_loss / len(
             self.train_loader
         )
 
         return epoch_loss
-
-
-   
-
 
     def validate(
         self
@@ -169,22 +174,17 @@ class Trainer:
 
             for batch in self.val_loader:
 
-                image = batch["image"].to(self.device)
-
                 graph = batch["graph"].to(self.device)
 
                 text = batch["text"]
 
                 outputs = self.model(
 
-                    image,
-
                     text,
 
                     graph
 
                 )
-
                 loss = self._compute_loss(outputs)
 
                 running_loss += loss.item()

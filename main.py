@@ -1,36 +1,39 @@
 from pathlib import Path
 
+import torch
 from sklearn.model_selection import train_test_split
 from torch_geometric.loader import DataLoader
 
-from data.vg_parser import VisualGenomeParser
+from relation.build import build_relation_vocabulary
+from relation.vocabulary import RelationVocabulary
+
 from data.graph_converter import GraphConverter
 from data.graph_dataset import GraphDataset
 
-from model.relation_vocab import RelationVocabulary
-from model.graph_encoder import GraphEncoder
+from model.graph_encoder import (
+    RelationEmbedding,
+    GraphBackbone,
+    GraphEncoder,
+)
 from model.fusion import FusionHead
 from model.graph_clip import GraphCLIP
 
 from pipline.trainer import Trainer
 
 
-# PATHS
+
 
 BASE_DIR = Path(__file__).resolve().parent
 
-DATA_DIR = BASE_DIR / "data" / "visual_genome"
-
-OBJECTS_JSON = DATA_DIR / "objects.json"
-
-RELATIONSHIPS_JSON = DATA_DIR / "relationships.json"
+DATA_DIR = BASE_DIR / "dataset"
 
 IMAGES_DIR = DATA_DIR / "images"
 
-FEATURES_DIR = DATA_DIR / "features"
+GRAPH_DIR = DATA_DIR / "processed_data"
 
 RELATION_VOCAB = (
     BASE_DIR
+    / "relation"
     / "resources"
     / "final_vocab.json"
 )
@@ -41,191 +44,221 @@ CHECKPOINT_DIR = (
 )
 
 
-# PARSER
+def main():
 
-parser = VisualGenomeParser(
 
-    objects_json_path=str(OBJECTS_JSON),
+    if not RELATION_VOCAB.exists():
 
-    relationships_json_path=str(
-        RELATIONSHIPS_JSON
+        print("=" * 60)
+        print("Relation vocabulary bulunamadı.")
+        print("Vocabulary oluşturuluyor...")
+        print("=" * 60)
+
+        build_relation_vocabulary()
+
+    relation_vocab = RelationVocabulary.load(
+        RELATION_VOCAB
     )
 
-)
 
-# RELATION VOCAB
+    image_ids = sorted(
 
-relation_vocab = RelationVocabulary(
-    str(RELATION_VOCAB)
-)
+        int(path.stem)
 
-# GRAPH CONVERTER
+        for path in GRAPH_DIR.glob("*.pt")
 
-graph_converter = GraphConverter(
+    )
+    print("=" * 60)
+    print("SceneGraph dosyaları doğrulanıyor...")
+    print("=" * 60)
 
-    feature_dir=str(FEATURES_DIR),
+    valid_image_ids = []
 
-    relation_vocab=relation_vocab
+    empty_graphs = 0
 
-)
+    for image_id in image_ids:
 
+        graph_path = GRAPH_DIR / f"{image_id}.pt"
 
-# IMAGE IDS
+        try:
 
-image_ids = sorted(
+            scene_graph = torch.load(
 
-    parser.objects_dict.keys(),
+                graph_path,
 
-    key=int
+                map_location="cpu",
 
-)
+                weights_only=False
 
+            )
 
-# TRAIN / VALIDATION SPLIT
+        except Exception:
 
-train_ids, val_ids = train_test_split(
+            continue
 
-    image_ids,
+        if len(scene_graph.nodes) == 0:
 
-    test_size=0.20,
+            empty_graphs += 1
 
-    random_state=42,
+            continue
 
-    shuffle=True
+        valid_image_ids.append(image_id)
 
-)
+    image_ids = valid_image_ids
 
+    print(f"Kullanılabilir SceneGraph : {len(image_ids):,}")
+    print(f"Boş SceneGraph          : {empty_graphs:,}")
+    print("=" * 60)
 
-# CAPTIONS
 
+    graph_converter = GraphConverter(
+        relation_vocab=relation_vocab
+    )
 
-captions = {}
+    
 
+    train_ids, val_ids = train_test_split(
 
-# DATASETS
+        image_ids,
 
-train_dataset = GraphDataset(
+        test_size=0.20,
 
-    image_ids=train_ids,
+        shuffle=True,
 
-    parser=parser,
+        random_state=42
 
-    graph_converter=graph_converter,
+    )
 
-    images_dir=str(IMAGES_DIR),
+    captions = {}
 
-    captions=captions,
+    train_dataset = GraphDataset(
 
-    image_transform=None
+        image_ids=train_ids,
 
-)
+        graph_dir=str(GRAPH_DIR),
 
-val_dataset = GraphDataset(
+        graph_converter=graph_converter,
 
-    image_ids=val_ids,
+        images_dir=str(IMAGES_DIR),
 
-    parser=parser,
+        captions=captions,
 
-    graph_converter=graph_converter,
+        image_transform=None
 
-    images_dir=str(IMAGES_DIR),
+    )
 
-    captions=captions,
+    val_dataset = GraphDataset(
 
-    image_transform=None
+        image_ids=val_ids,
 
-)
+        graph_dir=str(GRAPH_DIR),
 
+        graph_converter=graph_converter,
 
-# DATALOADERS
+        images_dir=str(IMAGES_DIR),
 
-train_loader = DataLoader(
+        captions=captions,
 
-    train_dataset,
+        image_transform=None
 
-    batch_size=32,
+    )
 
-    shuffle=True,
+   
+    PIN_MEMORY = torch.cuda.is_available()
 
-    num_workers=4,
+    train_loader = DataLoader(
 
-    pin_memory=True
+        train_dataset,
 
-)
+        batch_size=32,
 
-val_loader = DataLoader(
+        shuffle=True,
 
-    val_dataset,
+        num_workers=8,
 
-    batch_size=32,
+        pin_memory=PIN_MEMORY,
 
-    shuffle=False,
+        persistent_workers=True
 
-    num_workers=4,
+    )
 
-    pin_memory=True
+    val_loader = DataLoader(
 
-)
+        val_dataset,
 
+        batch_size=32,
 
-# GRAPH ENCODER
+        shuffle=False,
 
-graph_encoder = GraphEncoder(
+        num_workers=8,
 
-    num_relations=len(relation_vocab),
+        pin_memory=PIN_MEMORY,
 
-    node_dim=512,
+        persistent_workers=True
 
-    relation_dim=64,
+    )
 
-    hidden_dim=512
+   
+    relation_embedding = RelationEmbedding(
 
-)
+        num_relations=len(
+            relation_vocab.relation_to_id
+        ),
 
+        embedding_dim=64
 
-# FUSION
+    )
 
-fusion_head = FusionHead(
+    graph_backbone = GraphBackbone(
 
-    embedding_dim=512,
+        node_dim=512,
 
-    hidden_dim=512
+        edge_dim=64,
 
-)
+        hidden_dim=512
 
+    )
 
-# MODEL
+    graph_encoder = GraphEncoder(
 
-model = GraphCLIP(
+        relation_embedding=relation_embedding,
 
-    graph_encoder=graph_encoder,
+        backbone=graph_backbone
 
-    fusion_head=fusion_head
+    )
 
-)
+    fusion_head = FusionHead()
 
+    model = GraphCLIP(
 
+        graph_encoder=graph_encoder,
 
-trainer = Trainer(
+        fusion_head=fusion_head
 
-    model=model,
+    )
 
-    train_loader=train_loader,
+    
+    trainer = Trainer(
 
-    val_loader=val_loader,
+        model=model,
 
-    learning_rate=1e-4,
+        train_loader=train_loader,
 
-    weight_decay=1e-4,
+        val_loader=val_loader,
 
-    epochs=30,
+        learning_rate=1e-4,
 
-    checkpoint_dir=str(CHECKPOINT_DIR)
+        weight_decay=1e-4,
 
-)
+        epochs=1,
 
+        checkpoint_dir=str(CHECKPOINT_DIR)
+
+    )
+
+    trainer.fit()
 
 
 if __name__ == "__main__":
 
-    trainer.fit()
+    main()

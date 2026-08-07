@@ -14,7 +14,20 @@ from model.fusion import FusionHead
 
 
 class GraphCLIP(nn.Module):
-    
+    """
+    GraphCLIP modeli.
+
+    Bu sürümde görüntüler eğitim sırasında tekrar
+    CLIP Vision Encoder'dan geçirilmez.
+
+    Node feature'ları preprocessing aşamasında
+    üretildiği için yalnızca:
+
+        Graph -> GNN
+        Text  -> CLIP Text Encoder
+
+    çalıştırılır.
+    """
 
     def __init__(
         self,
@@ -25,9 +38,19 @@ class GraphCLIP(nn.Module):
 
         super().__init__()
 
-        self.clip = CLIPModel.from_pretrained(model_name)
+        #
+        # Sadece Text Encoder kullanılacak.
+        # CLIPModel yüklenmeye devam ediyor çünkü
+        # text encoder ve projection katmanlarını
+        # buradan alıyoruz.
+        #
+        self.clip = CLIPModel.from_pretrained(
+            model_name
+        )
 
-        self.tokenizer = CLIPTokenizer.from_pretrained(model_name)
+        self.tokenizer = CLIPTokenizer.from_pretrained(
+            model_name
+        )
 
         self.graph_encoder = graph_encoder
 
@@ -35,30 +58,15 @@ class GraphCLIP(nn.Module):
 
     def forward(
         self,
-        image_tensor: torch.Tensor,
         text: list[str],
         graph_data: Data
     ) -> dict[str, torch.Tensor]:
 
-        # Vision Encoder
-        
+        device = next(self.parameters()).device
 
-        vision_outputs = self.clip.vision_model(
-            pixel_values=image_tensor
-        )
-
-        image_embedding = self.clip.visual_projection(
-            vision_outputs.pooler_output
-        )
-
-        image_embedding = F.normalize(
-            image_embedding,
-            dim=-1
-        )
-
-       
-        # Text Encoder
-        
+        # ==================================================
+        # TEXT ENCODER
+        # ==================================================
 
         tokens = self.tokenizer(
             text,
@@ -68,46 +76,68 @@ class GraphCLIP(nn.Module):
         )
 
         tokens = {
-            key: value.to(image_tensor.device)
+
+            key: value.to(device)
+
             for key, value in tokens.items()
+
         }
 
-        text_outputs = self.clip.text_model(**tokens)
+        text_outputs = self.clip.text_model(
+            **tokens
+        )
 
         text_embedding = self.clip.text_projection(
             text_outputs.pooler_output
         )
 
         text_embedding = F.normalize(
+
             text_embedding,
+
             dim=-1
+
         )
 
-    
-        # Graph Encoder
-        
-        graph_data = graph_data.to(image_tensor.device)
-
+        # ==================================================
+        # GRAPH ENCODER
+        # ==================================================
+        graph_data = graph_data.to(device)
         graph_embedding = self.graph_encoder(
             graph_data
         )
 
         graph_embedding = F.normalize(
+
             graph_embedding,
+
             dim=-1
+
         )
 
-    
-        # Fusion
-      
+        # ==================================================
+        # FUSION
+        # ==================================================
+
+        #
+        # Yeni mimaride FusionHead artık
+        # graph embedding'i son embedding olarak kullanıyor.
+        #
         fused_embedding = self.fusion_head(
-            image_embedding=image_embedding,
+
             graph_embedding=graph_embedding
+
+        )
+
+        fused_embedding = F.normalize(
+
+            fused_embedding,
+
+            dim=-1
+
         )
 
         return {
-
-            "image_embedding": image_embedding,
 
             "graph_embedding": graph_embedding,
 
