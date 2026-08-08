@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Iterable
+from typing import Iterable
 
 import torch
 from PIL import Image
@@ -13,6 +13,10 @@ from core.entities import (
     SceneGraph,
 )
 
+from inference.text_analyzer import (
+    TextAnalysis,
+    TextRelation,
+)
 
 @dataclass(frozen=True)
 class DetectedObject:
@@ -21,20 +25,12 @@ class DetectedObject:
     bbox: BoundingBox
 
 
-@dataclass(frozen=True)
-class DetectedRelation:
-    
-    source_id: int | str
-    target_id: int | str
-    relation_label: str
-
-
 class ImageProcessor:
-    
+   
     def __init__(
         self,
-        detector: Any,
-        feature_extractor: Any,
+        detector,
+        feature_extractor,
     ):
         self.detector = detector
         self.feature_extractor = feature_extractor
@@ -42,22 +38,33 @@ class ImageProcessor:
     def process(
         self,
         image: Image.Image,
-        text_entities: Iterable[str],
+        analysis: TextAnalysis,
         image_id: str = "inference",
     ) -> SceneGraph:
 
-        if not isinstance(image, Image.Image):
+        if not isinstance(
+            image,
+            Image.Image,
+        ):
             raise TypeError(
                 "image bir PIL.Image.Image olmalıdır."
             )
 
+        if not isinstance(
+            analysis,
+            TextAnalysis,
+        ):
+            raise TypeError(
+                "analysis bir TextAnalysis nesnesi olmalıdır."
+            )
+
         entities = self._normalize_entities(
-            text_entities
+            analysis
         )
 
         if len(entities) == 0:
             raise ValueError(
-                "En az bir text entity gereklidir."
+                "Text analizinden hiçbir entity çıkarılamadı."
             )
 
         detections = self._detect(
@@ -67,23 +74,17 @@ class ImageProcessor:
 
         if len(detections) == 0:
             raise ValueError(
-                "Görüntüde istenen nesneler bulunamadı."
+                "Görüntüde text ile ilişkili hiçbir nesne bulunamadı."
             )
 
-        nodes, id_mapping = self._build_nodes(
+        nodes, entity_to_node = self._build_nodes(
             image=image,
             detections=detections,
-        )
-
-        relations = self._get_relations(
-            image=image,
-            detections=detections,
-            id_mapping=id_mapping,
-            entities=entities,
         )
 
         edges = self._build_edges(
-            relations=relations,
+            relations=analysis.relations,
+            entity_to_node=entity_to_node,
         )
 
         return SceneGraph(
@@ -92,38 +93,18 @@ class ImageProcessor:
             edges=edges,
         )
 
+    # OBJECT DETECTION
+    
     def _detect(
         self,
         image: Image.Image,
         entities: list[str],
     ) -> list[DetectedObject]:
 
-        if hasattr(self.detector, "detect"):
-            result = self.detector.detect(
-                image=image,
-                queries=entities,
-            )
-
-        elif callable(self.detector):
-            result = self.detector(
-                image,
-                entities,
-            )
-
-        else:
-            raise TypeError(
-                "Detector .detect(image, queries) metoduna "
-                "veya callable bir arayüze sahip olmalıdır."
-            )
-
-        return self._parse_detections(
-            result
+        result = self.detector.detect(
+            image=image,
+            queries=entities,
         )
-
-    def _parse_detections(
-        self,
-        result: Any,
-    ) -> list[DetectedObject]:
 
         if result is None:
             return []
@@ -132,13 +113,19 @@ class ImageProcessor:
 
         for index, item in enumerate(result):
 
-            if isinstance(item, DetectedObject):
+            if isinstance(
+                item,
+                DetectedObject,
+            ):
                 detections.append(item)
                 continue
 
-            if not isinstance(item, dict):
+            if not isinstance(
+                item,
+                dict,
+            ):
                 raise TypeError(
-                    "Detector çıktısındaki her nesne "
+                    "Detector çıktısındaki nesneler "
                     "dict veya DetectedObject olmalıdır."
                 )
 
@@ -163,20 +150,21 @@ class ImageProcessor:
 
             if label is None:
                 raise ValueError(
-                    "Detector çıktısında 'label' veya 'name' "
-                    "bulunamadı."
+                    "Detector çıktısında label/name bulunamadı."
                 )
 
             if bbox is None:
                 raise ValueError(
-                    "Detector çıktısında 'bbox' bulunamadı."
+                    "Detector çıktısında bbox bulunamadı."
                 )
 
             detections.append(
                 DetectedObject(
                     detector_id=detector_id,
-                    label=str(label),
-                    bbox=self._parse_bbox(bbox),
+                    label=str(label).strip().lower(),
+                    bbox=self._parse_bbox(
+                        bbox
+                    ),
                 )
             )
 
@@ -184,13 +172,19 @@ class ImageProcessor:
 
     @staticmethod
     def _parse_bbox(
-        bbox: Any,
+        bbox,
     ) -> BoundingBox:
 
-        if isinstance(bbox, BoundingBox):
+        if isinstance(
+            bbox,
+            BoundingBox,
+        ):
             return bbox
 
-        if isinstance(bbox, dict):
+        if isinstance(
+            bbox,
+            dict,
+        ):
 
             if {
                 "x_min",
@@ -200,10 +194,18 @@ class ImageProcessor:
             }.issubset(bbox):
 
                 return BoundingBox(
-                    x_min=float(bbox["x_min"]),
-                    y_min=float(bbox["y_min"]),
-                    x_max=float(bbox["x_max"]),
-                    y_max=float(bbox["y_max"]),
+                    x_min=float(
+                        bbox["x_min"]
+                    ),
+                    y_min=float(
+                        bbox["y_min"]
+                    ),
+                    x_max=float(
+                        bbox["x_max"]
+                    ),
+                    y_max=float(
+                        bbox["y_max"]
+                    ),
                 )
 
             if {
@@ -213,10 +215,21 @@ class ImageProcessor:
                 "h",
             }.issubset(bbox):
 
-                x = float(bbox["x"])
-                y = float(bbox["y"])
-                w = float(bbox["w"])
-                h = float(bbox["h"])
+                x = float(
+                    bbox["x"]
+                )
+
+                y = float(
+                    bbox["y"]
+                )
+
+                w = float(
+                    bbox["w"]
+                )
+
+                h = float(
+                    bbox["h"]
+                )
 
                 return BoundingBox(
                     x_min=x,
@@ -225,7 +238,10 @@ class ImageProcessor:
                     y_max=y + h,
                 )
 
-        if isinstance(bbox, (list, tuple)):
+        if isinstance(
+            bbox,
+            (list, tuple),
+        ):
 
             if len(bbox) != 4:
                 raise ValueError(
@@ -251,11 +267,15 @@ class ImageProcessor:
         detections: list[DetectedObject],
     ) -> tuple[
         list[Node],
-        dict[int | str, int],
+        dict[str, list[int]],
     ]:
 
         nodes = []
-        id_mapping = {}
+
+        entity_to_node: dict[
+            str,
+            list[int],
+        ] = {}
 
         for node_id, detection in enumerate(
             detections
@@ -275,26 +295,37 @@ class ImageProcessor:
 
             if feature.numel() != 512:
                 raise ValueError(
-                    f"Node feature boyutu 512 olmalıdır. "
+                    "Node feature boyutu 512 olmalıdır. "
                     f"Alınan boyut: {feature.numel()}"
                 )
 
             feature = feature.float()
 
-            id_mapping[
-                detection.detector_id
-            ] = node_id
+            label = (
+                detection.label
+                .strip()
+                .lower()
+            )
 
             nodes.append(
                 Node(
                     node_id=node_id,
-                    label=detection.label,
+                    label=label,
                     bbox=detection.bbox,
                     feature_tensor=feature,
                 )
             )
 
-        return nodes, id_mapping
+            entity_to_node.setdefault(
+                label,
+                [],
+            ).append(
+                node_id
+            )
+
+        return nodes, entity_to_node
+
+    # FEATURE EXTRACTION
 
     def _extract_feature(
         self,
@@ -306,8 +337,10 @@ class ImageProcessor:
             "extract",
         ):
 
-            feature = self.feature_extractor.extract(
-                crop
+            feature = (
+                self.feature_extractor.extract(
+                    crop
+                )
             )
 
         elif callable(
@@ -321,8 +354,9 @@ class ImageProcessor:
         else:
 
             raise TypeError(
-                "Feature extractor .extract(image) metoduna "
-                "veya callable bir arayüze sahip olmalıdır."
+                "Feature extractor .extract(image) "
+                "metoduna veya callable bir arayüze "
+                "sahip olmalıdır."
             )
 
         if not isinstance(
@@ -335,6 +369,8 @@ class ImageProcessor:
             )
 
         return feature.detach().cpu()
+
+    # CROPPING
 
     @staticmethod
     def _crop(
@@ -365,6 +401,7 @@ class ImageProcessor:
         )
 
         if x2 <= x1 or y2 <= y1:
+
             x2 = min(
                 x1 + 1,
                 width,
@@ -376,145 +413,113 @@ class ImageProcessor:
             )
 
         return image.crop(
-            (x1, y1, x2, y2)
+            (
+                x1,
+                y1,
+                x2,
+                y2,
+            )
         )
 
-    def _get_relations(
-        self,
-        image: Image.Image,
-        detections: list[DetectedObject],
-        id_mapping: dict[int | str, int],
-        entities: list[str],
-    ) -> list[DetectedRelation]:
+    # EDGE CONSTRUCTION
 
-        if not hasattr(
-            self.detector,
-            "detect_relations",
-        ):
-
-            return []
-
-        raw_relations = self.detector.detect_relations(
-            image=image,
-            objects=detections,
-            entities=entities,
-        )
-
-        relations = []
-
-        for item in raw_relations or []:
-
-            if isinstance(
-                item,
-                DetectedRelation,
-            ):
-
-                relations.append(item)
-                continue
-
-            if not isinstance(
-                item,
-                dict,
-            ):
-
-                raise TypeError(
-                    "Relation çıktısı dict veya "
-                    "DetectedRelation olmalıdır."
-                )
-
-            source_id = item.get(
-                "source_id",
-                item.get(
-                    "subject_id",
-                ),
-            )
-
-            target_id = item.get(
-                "target_id",
-                item.get(
-                    "object_id",
-                ),
-            )
-
-            relation_label = item.get(
-                "relation_label",
-                item.get(
-                    "predicate",
-                ),
-            )
-
-            if (
-                source_id is None
-                or target_id is None
-                or relation_label is None
-            ):
-
-                continue
-
-            if source_id not in id_mapping:
-                continue
-
-            if target_id not in id_mapping:
-                continue
-
-            relations.append(
-                DetectedRelation(
-                    source_id=id_mapping[source_id],
-                    target_id=id_mapping[target_id],
-                    relation_label=str(
-                        relation_label
-                    ),
-                )
-            )
-
-        return relations
-
-    @staticmethod
     def _build_edges(
-        relations: list[DetectedRelation],
+        self,
+        relations: Iterable[TextRelation],
+        entity_to_node: dict[str, list[int]],
     ) -> list[Edge]:
 
         edges = []
 
         for relation in relations:
 
-            edges.append(
-                Edge(
-                    source_id=int(
-                        relation.source_id
-                    ),
-                    target_id=int(
-                        relation.target_id
-                    ),
-                    relation_label=(
-                        relation.relation_label
-                        .strip()
-                        .lower()
-                    ),
-                    relation_id=None,
+            subject = self._normalize_entity(
+                relation.subject
+            )
+
+            object_label = self._normalize_entity(
+                relation.object
+            )
+
+            subject_nodes = (
+                entity_to_node.get(
+                    subject,
+                    [],
                 )
             )
 
+            object_nodes = (
+                entity_to_node.get(
+                    object_label,
+                    [],
+                )
+            )
+
+            if not subject_nodes:
+                continue
+
+            if not object_nodes:
+                continue
+
+            for source_id in subject_nodes:
+
+                for target_id in object_nodes:
+
+                    if source_id == target_id:
+                        continue
+
+                    edges.append(
+                        Edge(
+                            source_id=source_id,
+                            target_id=target_id,
+                            relation_label=(
+                                relation.canonical_relation
+                                .strip()
+                                .lower()
+                            ),
+                            relation_id=(
+                                relation.relation_id
+                            ),
+                            spatial_features=None,
+                        )
+                    )
+
         return edges
+
+    # ENTITY MATCHING
 
     @staticmethod
     def _normalize_entities(
-        entities: Iterable[str],
+        analysis: TextAnalysis,
     ) -> list[str]:
 
-        normalized = []
+        entities = []
 
-        for entity in entities:
+        for entity in analysis.entities:
 
-            if entity is None:
+            value = (
+                entity.text
+                .strip()
+                .lower()
+            )
+
+            if not value:
                 continue
 
-            entity = str(entity).strip().lower()
+            if value not in entities:
+                entities.append(
+                    value
+                )
 
-            if not entity:
-                continue
+        return entities
 
-            if entity not in normalized:
-                normalized.append(entity)
+    @staticmethod
+    def _normalize_entity(
+        value: str,
+    ) -> str:
 
-        return normalized
+        return " ".join(
+            value.strip()
+            .lower()
+            .split()
+        )
