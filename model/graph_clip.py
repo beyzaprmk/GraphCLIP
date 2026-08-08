@@ -45,7 +45,8 @@ class GraphCLIP(nn.Module):
         # buradan alıyoruz.
         #
         self.clip = CLIPModel.from_pretrained(
-            model_name
+            model_name,
+            use_safetensors=True
         )
 
         self.tokenizer = CLIPTokenizer.from_pretrained(
