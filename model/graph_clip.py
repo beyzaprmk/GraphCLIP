@@ -147,3 +147,33 @@ class GraphCLIP(nn.Module):
             "text_embedding": text_embedding
 
         }
+
+
+    def encode_graph(
+        self,
+        graph_data: Data
+    ) -> torch.Tensor:
+
+        device = next(self.parameters()).device
+
+        graph_data = graph_data.to(device)
+
+        graph_embedding = self.graph_encoder(
+            graph_data
+        )
+
+        graph_embedding = F.normalize(
+            graph_embedding,
+            dim=-1
+        )
+
+        fused_embedding = self.fusion_head(
+            graph_embedding=graph_embedding
+        )
+
+        fused_embedding = F.normalize(
+            fused_embedding,
+            dim=-1
+        )
+
+        return fused_embedding
