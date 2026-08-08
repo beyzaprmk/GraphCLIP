@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-
+from tqdm import tqdm
 import torch
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
@@ -116,81 +116,64 @@ class Trainer:
     def train_epoch(
         self
     ) -> float:
-
         self.model.train()
-
         running_loss = 0.0
 
-        for i, batch in enumerate(self.train_loader):
+        pbar = tqdm(self.train_loader, desc="[Eğitim]", leave=False)
 
-            if i % 10 == 0:
-                print(f"Batch {i}/{len(self.train_loader)}")
-
+        for batch in pbar:
             graph = batch["graph"].to(self.device)
-
             text = batch["text"]
 
             self.optimizer.zero_grad()
-
             outputs = self.model(
-
                 text,
-
                 graph
-
             )
-
             loss = self._compute_loss(
                 outputs
             )
-
             loss.backward()
-
             self.optimizer.step()
 
             running_loss += loss.item()
+            
+        
+            pbar.set_postfix({"Loss": f"{loss.item():.4f}"})
 
         epoch_loss = running_loss / len(
             self.train_loader
         )
-
         return epoch_loss
 
     def validate(
         self
     ) -> float:
-        
-
         if self.val_loader is None:
             raise ValueError(
                 "Validation DataLoader tanımlanmamış."
             )
 
         self.model.eval()
-
         running_loss = 0.0
 
+        pbar = tqdm(self.val_loader, desc="[Doğrulama]", colour="green", leave=False)
+
         with torch.no_grad():
-
-            for batch in self.val_loader:
-
+            for batch in pbar:
                 graph = batch["graph"].to(self.device)
-
                 text = batch["text"]
 
                 outputs = self.model(
-
                     text,
-
                     graph
-
                 )
                 loss = self._compute_loss(outputs)
-
                 running_loss += loss.item()
+                
+                pbar.set_postfix({"Loss": f"{loss.item():.4f}"})
 
         epoch_loss = running_loss / len(self.val_loader)
-
         return epoch_loss
 
 
