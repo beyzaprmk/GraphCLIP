@@ -7,9 +7,6 @@ from data.graph_converter import GraphConverter
 
 
 class GraphCLIPPredictor:
-    """
-    Trained GraphCLIP model ile inference yapar.
-    """
 
     def __init__(
         self,
@@ -21,16 +18,20 @@ class GraphCLIPPredictor:
         self.graph_converter = graph_converter
 
         if device is None:
+
             if torch.backends.mps.is_available():
                 self.device = torch.device("mps")
+
             elif torch.cuda.is_available():
                 self.device = torch.device("cuda")
+
             else:
                 self.device = torch.device("cpu")
+
         else:
             self.device = torch.device(device)
 
-        self.model = self.model.to(self.device)
+        self.model.to(self.device)
         self.model.eval()
 
     @torch.no_grad()
@@ -43,10 +44,12 @@ class GraphCLIPPredictor:
             scene_graph
         )
 
-        graph_data = graph_data.to(self.device)
+        graph_data = graph_data.to(
+            self.device
+        )
 
-        graph_embedding = self.model.encode_graph(
+        embedding = self.model.encode_graph(
             graph_data
         )
 
-        return graph_embedding
+        return embedding
