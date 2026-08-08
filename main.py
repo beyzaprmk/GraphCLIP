@@ -1,6 +1,8 @@
-from pathlib import Path
-
 import torch
+import json
+
+from pathlib import Path
+from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 from torch_geometric.loader import DataLoader
 
@@ -76,7 +78,7 @@ def main():
 
     empty_graphs = 0
 
-    for image_id in image_ids:
+    for image_id in tqdm(image_ids, desc="Dosyalar Doğrulanıyor"):
 
         graph_path = GRAPH_DIR / f"{image_id}.pt"
 
@@ -129,7 +131,17 @@ def main():
 
     )
 
-    captions = {}
+    CAPTION_FILE = DATA_DIR / "captions.json"
+    
+    if CAPTION_FILE.exists():
+        print("Metin açıklamaları (captions) yükleniyor...")
+        with open(CAPTION_FILE, "r", encoding="utf-8") as f:
+            raw_captions = json.load(f)
+            captions = {int(k): str(v) for k, v in raw_captions.items()}
+        print(f"Toplam {len(captions):,} adet açıklama yüklendi.")
+    else:
+        print("DİKKAT: captions.json dosyası bulunamadı! Loss sabit kalacaktır.")
+        captions = {}
 
     train_dataset = GraphDataset(
 
@@ -170,11 +182,11 @@ def main():
 
         train_dataset,
 
-        batch_size=32,
+        batch_size=8,
 
         shuffle=True,
 
-        num_workers=8,
+        num_workers=4,
 
         pin_memory=PIN_MEMORY,
 
@@ -186,11 +198,11 @@ def main():
 
         val_dataset,
 
-        batch_size=32,
+        batch_size=8,
 
         shuffle=False,
 
-        num_workers=8,
+        num_workers=4,
 
         pin_memory=PIN_MEMORY,
 
@@ -250,7 +262,7 @@ def main():
 
         weight_decay=1e-4,
 
-        epochs=1,
+        epochs=20,
 
         checkpoint_dir=str(CHECKPOINT_DIR)
 
