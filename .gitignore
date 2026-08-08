@@ -11,7 +11,10 @@ test_fusion.py
 test_clip.py
 test_graph.py
 test_main.py
+test_inference.py
+
 relation/resources/*
+
 
 
 
