@@ -13,36 +13,30 @@ class CheckpointLoader:
         device: str | None = None,
     ):
 
-        self.vocab_path = Path(
-            vocab_path
+        project_root = (
+            Path(__file__).resolve().parent.parent
         )
+
+        vocab_path = Path(vocab_path)
+
+        if not vocab_path.is_absolute():
+            vocab_path = project_root / vocab_path
+
+        self.vocab_path = vocab_path.resolve()
 
         if device is None:
 
             if torch.backends.mps.is_available():
-
-                self.device = torch.device(
-                    "mps"
-                )
+                self.device = torch.device("mps")
 
             elif torch.cuda.is_available():
-
-                self.device = torch.device(
-                    "cuda"
-                )
+                self.device = torch.device("cuda")
 
             else:
-
-                self.device = torch.device(
-                    "cpu"
-                )
+                self.device = torch.device("cpu")
 
         else:
-
-            self.device = torch.device(
-                device
-            )
-
+            self.device = torch.device(device)
     def load(
         self,
         checkpoint_path: str | Path,
