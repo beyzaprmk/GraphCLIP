@@ -1,10 +1,18 @@
 # GraphCLIP Artifacts
 
-This directory stores locally downloaded or exported GraphCLIP model artifacts.
+This directory is used for local GraphCLIP model artifacts.
 
-Model artifacts are intentionally excluded from the Git repository.
+Artifacts are portable model packages intended for:
 
-A pretrained GraphCLIP artifact has the following structure:
+- loading pretrained GraphCLIP models;
+- sharing trained models;
+- exporting models before uploading them to Hugging Face Hub;
+- storing locally downloaded pretrained models.
+
+## Artifact Structure
+
+A GraphCLIP artifact contains the files required to reconstruct a trained
+GraphCLIP model:
 
 ```text
 graphclip-base/

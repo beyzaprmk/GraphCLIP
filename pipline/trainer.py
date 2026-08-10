@@ -326,3 +326,27 @@ class Trainer:
         print("=" * 60)
         print("Training completed.")
         print("=" * 60)
+        
+    def export_pretrained(
+        self,
+        output_dir: str = "artifacts/graphclip-base",
+        model_name: str | None = None,
+    ) -> Path:
+
+        output_dir = Path(output_dir)
+
+        metadata = {
+            "source": "GraphCLIP Trainer",
+            "best_loss": self.best_loss,
+            "epochs": self.epochs,
+        }
+
+        if model_name is not None:
+            metadata["name"] = model_name
+
+        self.model.save_pretrained(
+            output_dir=output_dir,
+            metadata=metadata,
+        )
+
+        return output_dir

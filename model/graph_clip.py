@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from model.hub import download_model
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -268,24 +269,45 @@ class GraphCLIP(nn.Module):
     @classmethod
     def from_pretrained(
         cls,
-        model_dir: str | Path,
+        model_name_or_path: str | Path,
         device: str | torch.device | None = None,
     ) -> "GraphCLIP":
 
-        model_dir = Path(model_dir)
+        model_name_or_path = str(model_name_or_path)
 
-        if not model_dir.exists():
-            raise FileNotFoundError(
-                f"GraphCLIP model directory not found: {model_dir}"
+        
+        local_path = Path(model_name_or_path)
+
+        if local_path.exists():
+
+            model_dir = local_path
+
+        # ==========================================================
+        # HUGGING FACE HUB
+        # ==========================================================
+
+        else:
+
+            print(
+                f"[GraphCLIP] Local model not found: "
+                f"{model_name_or_path}"
             )
+
+            print(
+                f"[GraphCLIP] Trying Hugging Face Hub: "
+                f"{model_name_or_path}"
+            )
+
+            model_dir = download_model(
+                repo_id=model_name_or_path,
+                cache_dir="artifacts",
+            )
+
+        # VALIDATE ARTIFACT
 
         model_path = model_dir / "model.pt"
         config_path = model_dir / "config.json"
         metadata_path = model_dir / "metadata.json"
-
-        # ------------------------------------------------------
-        # Validate artifact
-        # ------------------------------------------------------
 
         required_files = [
             model_path,
@@ -300,14 +322,14 @@ class GraphCLIP(nn.Module):
         ]
 
         if missing_files:
+
             raise FileNotFoundError(
                 "Invalid GraphCLIP artifact.\n"
                 f"Directory: {model_dir}\n"
                 f"Missing files: {', '.join(missing_files)}"
             )
 
-        # Load config
-       
+        # LOAD CONFIG
 
         with config_path.open(
             "r",
@@ -316,7 +338,39 @@ class GraphCLIP(nn.Module):
 
             config = json.load(file)
 
-        
+        required_config = [
+            "architecture",
+            "clip_model",
+            "node_dim",
+            "hidden_dim",
+            "edge_dim",
+            "num_relations",
+            "embedding_dim",
+            "dropout",
+            "fusion_dropout",
+        ]
+
+        missing_config = [
+            key
+            for key in required_config
+            if key not in config
+        ]
+
+        if missing_config:
+
+            raise ValueError(
+                "Invalid GraphCLIP config.\n"
+                f"Missing fields: {', '.join(missing_config)}"
+            )
+
+        if config["architecture"] != "GraphCLIP":
+
+            raise ValueError(
+                "Invalid model architecture: "
+                f"{config['architecture']}"
+            )
+        # RECONSTRUCT GRAPH ENCODER
+
         relation_embedding = RelationEmbedding(
             num_relations=config["num_relations"],
             embedding_dim=config["edge_dim"],
@@ -341,10 +395,7 @@ class GraphCLIP(nn.Module):
             dropout=config["fusion_dropout"],
         )
 
-        # ------------------------------------------------------
-        # Construct GraphCLIP
-        # ------------------------------------------------------
-
+       
         model = cls(
             graph_encoder=graph_encoder,
             fusion_head=fusion_head,
@@ -364,14 +415,15 @@ class GraphCLIP(nn.Module):
 
        
         if device is not None:
+
             model = model.to(device)
 
         model.eval()
 
         print("=" * 60)
         print("GraphCLIP pretrained model loaded.")
-        print(f"Model : {model_dir}")
-        print(f"Device: {next(model.parameters()).device}")
+        print(f"Artifact : {model_dir}")
+        print(f"Device   : {next(model.parameters()).device}")
         print("=" * 60)
 
         return model
