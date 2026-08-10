@@ -1,1 +1,0 @@
-# Geliştirme için sahte (dummy) veri üreticisi
