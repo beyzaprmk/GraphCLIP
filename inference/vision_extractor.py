@@ -1,7 +1,12 @@
 from __future__ import annotations
-
+import contextlib
+import io
 import torch
 from PIL import Image
+from transformers import logging as transformers_logging
+
+transformers_logging.set_verbosity_error()
+transformers_logging.disable_progress_bar()
 from transformers import (
     CLIPProcessor,
     CLIPVisionModelWithProjection,
@@ -17,25 +22,24 @@ class InferenceVisionExtractor:
         self.model_name = model_name
         self.device = self._resolve_device(device)
 
-        print("=" * 60)
-        print("Inference Vision Extractor")
-        print(f"Model : {model_name}")
-        print(f"Device: {self.device}")
-        print("=" * 60)
-
-        self.processor = CLIPProcessor.from_pretrained(
-            model_name
-        )
-
-        self.model = (
-            CLIPVisionModelWithProjection
-            .from_pretrained(
-                model_name,
-                use_safetensors=True,
+        with contextlib.redirect_stdout(io.StringIO()), \
+             contextlib.redirect_stderr(io.StringIO()):
+            self.processor = CLIPProcessor.from_pretrained(
+                model_name
             )
-            .to(self.device)
-            .eval()
-        )
+
+        with contextlib.redirect_stdout(io.StringIO()), \
+             contextlib.redirect_stderr(io.StringIO()):
+
+            self.model = (
+                CLIPVisionModelWithProjection
+                .from_pretrained(
+                    model_name,
+                    use_safetensors=True,
+                )
+                .to(self.device)
+                .eval()
+            )
 
         for parameter in self.model.parameters():
             parameter.requires_grad = False

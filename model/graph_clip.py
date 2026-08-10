@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-
+import contextlib
+import io
 from model.hub import download_model
 import torch
 import torch.nn as nn
@@ -33,11 +34,12 @@ class GraphCLIP(nn.Module):
         super().__init__()
 
         self.model_name = model_name
-
-        self.clip = CLIPModel.from_pretrained(
-            model_name,
-            use_safetensors=True,
-        )
+        with contextlib.redirect_stdout(io.StringIO()), \
+             contextlib.redirect_stderr(io.StringIO()):
+            self.clip = CLIPModel.from_pretrained(
+                model_name,
+                use_safetensors=True,
+            )
 
         self.tokenizer = CLIPTokenizer.from_pretrained(
             model_name
@@ -255,14 +257,6 @@ class GraphCLIP(nn.Module):
                 indent=2,
             )
 
-        print("=" * 60)
-        print("GraphCLIP model exported.")
-        print(f"Directory : {output_dir}")
-        print(f"Model     : {model_path}")
-        print(f"Config    : {config_path}")
-        print(f"Metadata  : {metadata_path}")
-        print("=" * 60)
-
         return output_dir
 
   
@@ -282,9 +276,6 @@ class GraphCLIP(nn.Module):
 
             model_dir = local_path
 
-        # ==========================================================
-        # HUGGING FACE HUB
-        # ==========================================================
 
         else:
 
@@ -303,7 +294,6 @@ class GraphCLIP(nn.Module):
                 cache_dir="artifacts",
             )
 
-        # VALIDATE ARTIFACT
 
         model_path = model_dir / "model.pt"
         config_path = model_dir / "config.json"
@@ -329,7 +319,6 @@ class GraphCLIP(nn.Module):
                 f"Missing files: {', '.join(missing_files)}"
             )
 
-        # LOAD CONFIG
 
         with config_path.open(
             "r",
@@ -369,7 +358,6 @@ class GraphCLIP(nn.Module):
                 "Invalid model architecture: "
                 f"{config['architecture']}"
             )
-        # RECONSTRUCT GRAPH ENCODER
 
         relation_embedding = RelationEmbedding(
             num_relations=config["num_relations"],
@@ -419,11 +407,5 @@ class GraphCLIP(nn.Module):
             model = model.to(device)
 
         model.eval()
-
-        print("=" * 60)
-        print("GraphCLIP pretrained model loaded.")
-        print(f"Artifact : {model_dir}")
-        print(f"Device   : {next(model.parameters()).device}")
-        print("=" * 60)
 
         return model

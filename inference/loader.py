@@ -147,13 +147,7 @@ class CheckpointLoader:
         model.eval()
 
        
-        print("=" * 60)
-        print("GraphCLIP checkpoint loaded.")
-        print(f"Checkpoint : {checkpoint_path}")
-        print(f"Vocabulary : {self.vocab_path}")
-        print(f"Device     : {self.device}")
-        print("=" * 60)
-
+    
         return model
 
 class ArtifactLoader:
@@ -223,10 +217,7 @@ class ArtifactLoader:
                 f"Path: {artifact_dir}"
             )
 
-        # ======================================================
-        # VALIDATE REQUIRED FILES
-        # ======================================================
-
+       
         missing_files = [
             filename
             for filename in self.REQUIRED_FILES
@@ -275,10 +266,7 @@ class ArtifactLoader:
                 f"File: {config_path}"
             )
 
-        # ======================================================
-        # VALIDATE CONFIG
-        # ======================================================
-
+       
         missing_config = [
             key
             for key in self.REQUIRED_CONFIG
@@ -309,10 +297,7 @@ class ArtifactLoader:
                 f"Expected: {vocab_path}"
             )
 
-        # ======================================================
-        # RECONSTRUCT MODEL
-        # ======================================================
-
+        
         model = GraphCLIPFactory.create(
             vocab_path=vocab_path,
             model_name=config["clip_model"],
@@ -322,10 +307,7 @@ class ArtifactLoader:
             dropout=config["dropout"],
         )
 
-        # ======================================================
-        # LOAD MODEL WEIGHTS
-        # ======================================================
-
+       
         state_dict = torch.load(
             model_path,
             map_location=self.device,
@@ -366,14 +348,6 @@ class ArtifactLoader:
         
         model.eval()
 
-       
-        print("=" * 60)
-        print("GraphCLIP artifact loaded.")
-        print(f"Artifact : {artifact_dir}")
-        print(f"Model    : {model_path.name}")
-        print(f"Device   : {self.device}")
-        print("=" * 60)
-
         return model
 
 
@@ -382,27 +356,6 @@ def load_model(
     source: str | Path,
     device: str | None = None,
 ):
-    """
-    Load a GraphCLIP model from:
-
-        1. Local training checkpoint
-        2. Local exported artifact
-        3. Hugging Face Hub repository
-
-    Examples:
-
-        load_model(
-            "checkpoints/best_model.pt"
-        )
-
-        load_model(
-            "artifacts/graphclip-base"
-        )
-
-        load_model(
-            "username/graphclip-base"
-        )
-    """
 
     source = str(
         source
@@ -444,10 +397,6 @@ def load_model(
             return loader.load(
                 source_path
             )
-
-    # ==========================================================
-    # HUGGING FACE HUB
-    # ==========================================================
 
     print(
         f"[GraphCLIP] Local model not found: "
