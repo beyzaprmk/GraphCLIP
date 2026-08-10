@@ -18,8 +18,8 @@ from inference.inference import GraphCLIPInference
 
 VOCAB_PATH = (
     BASE_DIR
-    / "relation"
-    / "resources"
+    / "artifacts"
+    / "graphclip-base"
     / "final_vocab.json"
 )
 

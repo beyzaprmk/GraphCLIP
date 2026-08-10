@@ -11,7 +11,7 @@ BASE_DIR = Path(__file__).resolve().parent
 
 SYNSET_PATH = BASE_DIR / "resources" / "relationship_synsets.json"
 RELATIONSHIP_PATH = BASE_DIR / "resources" / "relationships.json"
-OUTPUT_PATH = BASE_DIR / "resources" / "final_vocab.json"
+OUTPUT_PATH = BASE_DIR.parent / "artifacts" / "graphclip-base" / "final_vocab.json"
 
 
 def build_relation_vocabulary() -> None:

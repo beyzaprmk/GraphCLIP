@@ -35,8 +35,8 @@ GRAPH_DIR = DATA_DIR / "processed_data"
 
 RELATION_VOCAB = (
     BASE_DIR
-    / "relation"
-    / "resources"
+    / "artifacts"
+    / "graphclip-base"
     / "final_vocab.json"
 )
 
