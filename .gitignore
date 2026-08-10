@@ -14,9 +14,10 @@ test_main.py
 test_inference.py
 
 relation/resources/*
+!relation/resources/final_vocab.json
 
-
-
+artifacts/*
+!artifacts/README.md
 
 checkpoints/
 processed_data/
