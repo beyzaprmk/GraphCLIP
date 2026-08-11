@@ -16,40 +16,9 @@ GraphCLIP is a graph-enhanced vision-language model for semantic and relational 
 
 ## Model Architecture
 
-```text
-Image
-  │
-  ▼
-OWL-ViT
-  │
-  ▼
-Object Detection
-  │
-  ▼
-CLIP Vision Encoder
-  │
-  ▼
-Scene Graph
-  │
-  ▼
-Relation Embedding
-  │
-  ▼
-Graph TransformerConv
-  │
-  ▼
-Attentional Aggregation
-  │
-  ▼
-Fusion Head
-  │
-  ▼
-GraphCLIP Embedding
-  │
-  ├──────────────► Cosine Similarity ◄──────────────┐
-  │                                                  │
-Text ───────────────► CLIP Text Encoder ────────────┘
-```
+<div align="center">
+  <img src="docs/2.png" alt="GraphCLIP Architecture" width="30%">
+</div>
 
 GraphCLIP combines CLIP, OWL-ViT, PyTorch Geometric, and a Graph Neural Network to represent objects and their relationships as a scene graph.
 
@@ -93,20 +62,20 @@ The model is downloaded into:
 artifacts/graphclip-base/
 ```
 
-Upload a local model:
+After logging into your account, upload your model to Hugging Face:
 
 ```bash
 python3 scripts/upload_model.py --repo YOUR_USERNAME/graphclip-base
 ```
 
-## Using a Pretrained Model
+## Use of Pre-trained or Newly Trained Models
 
 A pretrained model can be loaded directly from Hugging Face:
 
 ```python
-from inference.loader import load_model
+from graphclip import GraphCLIPInference
 
-model = load_model(
+engine = GraphCLIPInference.from_pretrained(
     "prmkkbb/graphclip-base"
 )
 ```
@@ -114,40 +83,78 @@ model = load_model(
 It can also be loaded from a local artifact:
 
 ```python
-model = load_model(
+engine = GraphCLIPInference.from_pretrained(
     "artifacts/graphclip-base"
 )
 ```
 
-## Using a Training Checkpoint
-
 A model produced by the training pipeline can also be loaded directly:
 
 ```python
-from inference.loader import load_model
-
-model = load_model(
+engine = GraphCLIPInference.from_pretrained(
     "checkpoints/best_model.pt"
 )
 ```
 
-This allows the training output to be used directly for inference without exporting it first.
+## Using GraphCLIP in Another Project
+
+GraphCLIP can be installed from its cloned repository and used from a different project directory.
+
+### 1. Clone GraphCLIP
+
+```bash
+git clone https://github.com/beyzaprmk/GraphCLIP.git
+```
+
+For example:
+
+```text
+workspace/
+├── GraphCLIP/
+└── MyProject/
+```
+
+### 2. Create or enter your project
+
+```bash
+mkdir MyProject
+cd MyProject
+```
+
+### 3. Create a virtual environment
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+### 4. Install GraphCLIP dependencies
+
+```bash
+python -m pip3 install -r ../GraphCLIP/requirements.txt
+```
+
+### 5. Install GraphCLIP as a package
+
+```bash
+python -m pip3 install -e ../GraphCLIP
+```
+
+The `pyproject.toml` file is processed automatically by `pip`. There is no need to create or run `egg-info` manually.
+
+### 6. Verify the installation
+
+```bash
+python3 -c "from graphclip import GraphCLIPInference; print('GraphCLIP import successful.')"
+```
 
 ## Inference
 
 ```python
-from inference.loader import load_model
-from inference.inference import GraphCLIPInference
+from graphclip import GraphCLIPInference
 
-model = load_model(
-    "prmkkbb/graphclip-base"
-)
-
-engine = GraphCLIPInference(
-    model=model,
-    graph_converter=graph_converter,
-    vocab_path="artifacts/graphclip-base/final_vocab.json",
-    synset_path="path/to/synset.json",
+engine = GraphCLIPInference.from_pretrained(
+    "artifacts/graphclip-base"
 )
 
 result = engine.predict(
@@ -155,7 +162,7 @@ result = engine.predict(
     text="a flower next to a vase",
 )
 
-print(result["similarity"])
+print("Similarity:", result["similarity"])
 ```
 
 Inference does not require the original training dataset.
@@ -163,13 +170,18 @@ Inference does not require the original training dataset.
 ## Training
 
 GraphCLIP can also be trained from scratch using the included training pipeline.
+
 ```bash
 python3 main.py
 ```
+
 The training process creates checkpoints under:
+
+```text
 checkpoints/
 ├── best_model.pt
 └── epoch_*.pt
+```
 
 Training uses a CLIP-style bidirectional contrastive loss with AdamW and cosine annealing.
 
@@ -195,5 +207,3 @@ GraphCLIP is designed for queries involving multiple objects and their relations
 "car near a tree"
 "person beside a bicycle"
 ```
-
-The inference pipeline extracts query entities, detects relevant objects with OWL-ViT, constructs a scene graph, encodes it with the Graph Neural Network, and compares it with the CLIP text embedding.
