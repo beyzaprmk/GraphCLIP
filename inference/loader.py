@@ -8,6 +8,7 @@ import torch
 from inference.factory import GraphCLIPFactory
 
 
+# GraphCLIP repository root
 PROJECT_ROOT = (
     Path(__file__).resolve().parent.parent
 )
@@ -29,26 +30,51 @@ def _resolve_device(
     return torch.device("cpu")
 
 
+def _resolve_local_path(
+    path: str | Path,
+) -> Path:
+
+    path = Path(path)
+
+    if path.is_absolute():
+        return path.resolve()
+
+   
+    cwd_path = (
+        Path.cwd() / path
+    ).resolve()
+
+    if cwd_path.exists():
+        return cwd_path
+
+    
+    project_path = (
+        PROJECT_ROOT / path
+    ).resolve()
+
+    if project_path.exists():
+        return project_path
+
+    return cwd_path
+
+
 def _attach_model_metadata(
     model,
-    *,
     artifact_dir: Path | None = None,
     vocab_path: Path | None = None,
 ):
-    
-    if artifact_dir is not None:
-        model._artifact_dir = Path(
-            artifact_dir
-        ).resolve()
-    else:
-        model._artifact_dir = None
 
-    if vocab_path is not None:
-        model._vocab_path = Path(
-            vocab_path
-        ).resolve()
-    else:
-        model._vocab_path = None
+    model._artifact_dir = (
+        artifact_dir.resolve()
+        if artifact_dir is not None
+        else None
+    )
+
+    model._vocab_path = (
+        vocab_path.resolve()
+        if vocab_path is not None
+        else None
+    )
 
     return model
 
@@ -69,19 +95,35 @@ class CheckpointLoader:
         checkpoint_path: Path,
     ) -> Path:
 
+        checkpoint_path = (
+            checkpoint_path.resolve()
+        )
+
         candidates = [
 
-            # 1. Same directory
+            # Checkpoint'in bulunduğu klasör
             checkpoint_path.parent
             / "final_vocab.json",
 
-            # 2. Standard project artifact
+            # Kullanıcının projesindeki artifact
+            Path.cwd()
+            / "artifacts"
+            / "graphclip-base"
+            / "final_vocab.json",
+
+            # GraphCLIP repository artifact'i
             PROJECT_ROOT
             / "artifacts"
             / "graphclip-base"
             / "final_vocab.json",
 
-            # 3. Repository relation resource
+            # Kullanıcının relation resource'u
+            Path.cwd()
+            / "relation"
+            / "resources"
+            / "final_vocab.json",
+
+            # GraphCLIP relation resource'u
             PROJECT_ROOT
             / "relation"
             / "resources"
@@ -91,7 +133,6 @@ class CheckpointLoader:
         for path in candidates:
 
             if path.exists():
-
                 return path.resolve()
 
         raise FileNotFoundError(
@@ -99,13 +140,12 @@ class CheckpointLoader:
             "GraphCLIP checkpoint.\n\n"
             "Checked:\n"
             + "\n".join(
-                f"  - {path}"
+                f"  - {path.resolve()}"
                 for path in candidates
             )
             + "\n\n"
-            "A V1 checkpoint does not contain the "
-            "relation vocabulary, so final_vocab.json "
-            "is required."
+            "The V1 checkpoint format requires "
+            "final_vocab.json."
         )
 
     def load(
@@ -113,19 +153,8 @@ class CheckpointLoader:
         checkpoint_path: str | Path,
     ):
 
-        checkpoint_path = Path(
+        checkpoint_path = _resolve_local_path(
             checkpoint_path
-        )
-
-        if not checkpoint_path.is_absolute():
-
-            checkpoint_path = (
-                PROJECT_ROOT
-                / checkpoint_path
-            )
-
-        checkpoint_path = (
-            checkpoint_path.resolve()
         )
 
         if not checkpoint_path.exists():
@@ -138,8 +167,7 @@ class CheckpointLoader:
         if not checkpoint_path.is_file():
 
             raise ValueError(
-                "GraphCLIP checkpoint path is not "
-                "a file.\n"
+                "GraphCLIP checkpoint path is not a file.\n"
                 f"Path: {checkpoint_path}"
             )
 
@@ -193,13 +221,8 @@ class CheckpointLoader:
         model.eval()
 
         return _attach_model_metadata(
-            model,
-            artifact_dir=(
-                vocab_path.parent
-                if vocab_path.parent.name
-                == "graphclip-base"
-                else None
-            ),
+            model=model,
+            artifact_dir=vocab_path.parent,
             vocab_path=vocab_path,
         )
 
@@ -239,19 +262,8 @@ class ArtifactLoader:
         artifact_dir: str | Path,
     ):
 
-        artifact_dir = Path(
+        artifact_dir = _resolve_local_path(
             artifact_dir
-        )
-
-        if not artifact_dir.is_absolute():
-
-            artifact_dir = (
-                PROJECT_ROOT
-                / artifact_dir
-            )
-
-        artifact_dir = (
-            artifact_dir.resolve()
         )
 
         if not artifact_dir.exists():
@@ -264,8 +276,7 @@ class ArtifactLoader:
         if not artifact_dir.is_dir():
 
             raise ValueError(
-                "GraphCLIP artifact path is not "
-                "a directory.\n"
+                "GraphCLIP artifact path is not a directory.\n"
                 f"Path: {artifact_dir}"
             )
 
@@ -303,9 +314,7 @@ class ArtifactLoader:
             encoding="utf-8",
         ) as file:
 
-            config = json.load(
-                file
-            )
+            config = json.load(file)
 
         if not isinstance(
             config,
@@ -358,9 +367,9 @@ class ArtifactLoader:
             and "model_state_dict" in state_dict
         ):
 
-            state_dict = state_dict[
-                "model_state_dict"
-            ]
+            state_dict = (
+                state_dict["model_state_dict"]
+            )
 
         if not isinstance(
             state_dict,
@@ -383,7 +392,7 @@ class ArtifactLoader:
         model.eval()
 
         return _attach_model_metadata(
-            model,
+            model=model,
             artifact_dir=artifact_dir,
             vocab_path=vocab_path,
         )
@@ -394,60 +403,90 @@ def load_model(
     device: str | None = None,
 ):
 
-    source = str(source)
-
     source_path = Path(
         source
     )
 
-    # LOCAL MODEL
 
-    if source_path.exists():
+    if source_path.is_absolute():
 
-        if source_path.is_file():
+        if source_path.exists():
 
-            if (
-                source_path.suffix.lower()
-                != ".pt"
-            ):
+            if source_path.is_file():
 
-                raise ValueError(
-                    "Unsupported GraphCLIP model file.\n"
-                    f"File: {source_path}\n\n"
-                    "Expected a .pt checkpoint."
+                return CheckpointLoader(
+                    device=device,
+                ).load(
+                    source_path
                 )
 
-            loader = CheckpointLoader(
-                device=device,
-            )
+            if source_path.is_dir():
 
-            return loader.load(
-                source_path
-            )
+                return ArtifactLoader(
+                    device=device,
+                ).load(
+                    source_path
+                )
 
-        if source_path.is_dir():
 
-            loader = ArtifactLoader(
-                device=device,
-            )
+    if not source_path.is_absolute():
 
-            return loader.load(
-                source_path
-            )
+        # First: user's current project
+        cwd_path = (
+            Path.cwd() / source_path
+        ).resolve()
+
+        if cwd_path.exists():
+
+            if cwd_path.is_file():
+
+                return CheckpointLoader(
+                    device=device,
+                ).load(
+                    cwd_path
+                )
+
+            if cwd_path.is_dir():
+
+                return ArtifactLoader(
+                    device=device,
+                ).load(
+                    cwd_path
+                )
+
+        project_path = (
+            PROJECT_ROOT / source_path
+        ).resolve()
+
+        if project_path.exists():
+
+            if project_path.is_file():
+
+                return CheckpointLoader(
+                    device=device,
+                ).load(
+                    project_path
+                )
+
+            if project_path.is_dir():
+
+                return ArtifactLoader(
+                    device=device,
+                ).load(
+                    project_path
+                )
 
     # HUGGING FACE HUB
 
     from model.hub import download_model
 
     model_dir = download_model(
-        repo_id=source,
+        repo_id=str(source),
         cache_dir="artifacts",
     )
 
-    loader = ArtifactLoader(
+    return ArtifactLoader(
         device=device,
-    )
-
-    return loader.load(
+    ).load(
         model_dir
     )
