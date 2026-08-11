@@ -8,9 +8,9 @@ import torch
 from inference.factory import GraphCLIPFactory
 
 
-PROJECT_ROOT = Path(
-    __file__
-).resolve().parent.parent
+PROJECT_ROOT = (
+    Path(__file__).resolve().parent.parent
+)
 
 
 def _resolve_device(
@@ -29,8 +29,32 @@ def _resolve_device(
     return torch.device("cpu")
 
 
+def _attach_model_metadata(
+    model,
+    *,
+    artifact_dir: Path | None = None,
+    vocab_path: Path | None = None,
+):
+    
+    if artifact_dir is not None:
+        model._artifact_dir = Path(
+            artifact_dir
+        ).resolve()
+    else:
+        model._artifact_dir = None
+
+    if vocab_path is not None:
+        model._vocab_path = Path(
+            vocab_path
+        ).resolve()
+    else:
+        model._vocab_path = None
+
+    return model
+
+
 class CheckpointLoader:
-   
+
     def __init__(
         self,
         device: str | None = None,
@@ -40,12 +64,48 @@ class CheckpointLoader:
             device
         )
 
-        
-        self.vocab_path = (
+    def _resolve_vocab(
+        self,
+        checkpoint_path: Path,
+    ) -> Path:
+
+        candidates = [
+
+            # 1. Same directory
+            checkpoint_path.parent
+            / "final_vocab.json",
+
+            # 2. Standard project artifact
             PROJECT_ROOT
             / "artifacts"
             / "graphclip-base"
-            / "final_vocab.json"
+            / "final_vocab.json",
+
+            # 3. Repository relation resource
+            PROJECT_ROOT
+            / "relation"
+            / "resources"
+            / "final_vocab.json",
+        ]
+
+        for path in candidates:
+
+            if path.exists():
+
+                return path.resolve()
+
+        raise FileNotFoundError(
+            "Relation vocabulary not found for "
+            "GraphCLIP checkpoint.\n\n"
+            "Checked:\n"
+            + "\n".join(
+                f"  - {path}"
+                for path in candidates
+            )
+            + "\n\n"
+            "A V1 checkpoint does not contain the "
+            "relation vocabulary, so final_vocab.json "
+            "is required."
         )
 
     def load(
@@ -57,7 +117,6 @@ class CheckpointLoader:
             checkpoint_path
         )
 
-       
         if not checkpoint_path.is_absolute():
 
             checkpoint_path = (
@@ -65,9 +124,10 @@ class CheckpointLoader:
                 / checkpoint_path
             )
 
-        checkpoint_path = checkpoint_path.resolve()
+        checkpoint_path = (
+            checkpoint_path.resolve()
+        )
 
-        
         if not checkpoint_path.exists():
 
             raise FileNotFoundError(
@@ -78,7 +138,8 @@ class CheckpointLoader:
         if not checkpoint_path.is_file():
 
             raise ValueError(
-                "GraphCLIP checkpoint path is not a file.\n"
+                "GraphCLIP checkpoint path is not "
+                "a file.\n"
                 f"Path: {checkpoint_path}"
             )
 
@@ -90,24 +151,14 @@ class CheckpointLoader:
                 "Expected a .pt file."
             )
 
-       
-        if not self.vocab_path.exists():
-
-            raise FileNotFoundError(
-                "Relation vocabulary not found.\n"
-                f"Vocabulary: {self.vocab_path}\n\n"
-                "The current V1 checkpoint format does not "
-                "contain model configuration, so the "
-                "GraphCLIP architecture cannot be reconstructed "
-                "without final_vocab.json."
-            )
-
-        
-        model = GraphCLIPFactory.create(
-            vocab_path=self.vocab_path,
+        vocab_path = self._resolve_vocab(
+            checkpoint_path
         )
 
-        
+        model = GraphCLIPFactory.create(
+            vocab_path=vocab_path,
+        )
+
         checkpoint = torch.load(
             checkpoint_path,
             map_location=self.device,
@@ -131,27 +182,30 @@ class CheckpointLoader:
                 "Missing key: model_state_dict"
             )
 
-       
         model.load_state_dict(
-            checkpoint[
-                "model_state_dict"
-            ]
+            checkpoint["model_state_dict"]
         )
 
-        
         model = model.to(
             self.device
         )
 
-        
         model.eval()
 
-       
-    
-        return model
+        return _attach_model_metadata(
+            model,
+            artifact_dir=(
+                vocab_path.parent
+                if vocab_path.parent.name
+                == "graphclip-base"
+                else None
+            ),
+            vocab_path=vocab_path,
+        )
+
 
 class ArtifactLoader:
-   
+
     REQUIRED_FILES = (
         "model.pt",
         "config.json",
@@ -189,9 +243,6 @@ class ArtifactLoader:
             artifact_dir
         )
 
-        # Resolve relative path from project root
-       
-
         if not artifact_dir.is_absolute():
 
             artifact_dir = (
@@ -199,9 +250,9 @@ class ArtifactLoader:
                 / artifact_dir
             )
 
-        artifact_dir = artifact_dir.resolve()
-
-        # VALIDATE ARTIFACT DIRECTORY
+        artifact_dir = (
+            artifact_dir.resolve()
+        )
 
         if not artifact_dir.exists():
 
@@ -213,11 +264,11 @@ class ArtifactLoader:
         if not artifact_dir.is_dir():
 
             raise ValueError(
-                "GraphCLIP artifact path is not a directory.\n"
+                "GraphCLIP artifact path is not "
+                "a directory.\n"
                 f"Path: {artifact_dir}"
             )
 
-       
         missing_files = [
             filename
             for filename in self.REQUIRED_FILES
@@ -266,7 +317,6 @@ class ArtifactLoader:
                 f"File: {config_path}"
             )
 
-       
         missing_config = [
             key
             for key in self.REQUIRED_CONFIG
@@ -288,16 +338,6 @@ class ArtifactLoader:
                 f"{config['architecture']}"
             )
 
-       
-        if not vocab_path.exists():
-
-            raise FileNotFoundError(
-                "Relation vocabulary not found "
-                "inside GraphCLIP artifact.\n"
-                f"Expected: {vocab_path}"
-            )
-
-        
         model = GraphCLIPFactory.create(
             vocab_path=vocab_path,
             model_name=config["clip_model"],
@@ -307,20 +347,17 @@ class ArtifactLoader:
             dropout=config["dropout"],
         )
 
-       
         state_dict = torch.load(
             model_path,
             map_location=self.device,
             weights_only=True,
         )
 
-        
         if (
             isinstance(state_dict, dict)
             and "model_state_dict" in state_dict
         ):
 
-            
             state_dict = state_dict[
                 "model_state_dict"
             ]
@@ -335,21 +372,21 @@ class ArtifactLoader:
                 f"File: {model_path}"
             )
 
-        
         model.load_state_dict(
             state_dict
         )
 
-        
         model = model.to(
             self.device
         )
 
-        
         model.eval()
 
-        return model
-
+        return _attach_model_metadata(
+            model,
+            artifact_dir=artifact_dir,
+            vocab_path=vocab_path,
+        )
 
 
 def load_model(
@@ -357,21 +394,22 @@ def load_model(
     device: str | None = None,
 ):
 
-    source = str(
-        source
-    )
+    source = str(source)
 
     source_path = Path(
         source
     )
 
-    
+    # LOCAL MODEL
+
     if source_path.exists():
 
-       
         if source_path.is_file():
 
-            if source_path.suffix.lower() != ".pt":
+            if (
+                source_path.suffix.lower()
+                != ".pt"
+            ):
 
                 raise ValueError(
                     "Unsupported GraphCLIP model file.\n"
@@ -387,7 +425,6 @@ def load_model(
                 source_path
             )
 
-       
         if source_path.is_dir():
 
             loader = ArtifactLoader(
@@ -398,15 +435,7 @@ def load_model(
                 source_path
             )
 
-    print(
-        f"[GraphCLIP] Local model not found: "
-        f"{source}"
-    )
-
-    print(
-        f"[GraphCLIP] Trying Hugging Face Hub: "
-        f"{source}"
-    )
+    # HUGGING FACE HUB
 
     from model.hub import download_model
 
@@ -414,7 +443,6 @@ def load_model(
         repo_id=source,
         cache_dir="artifacts",
     )
-
 
     loader = ArtifactLoader(
         device=device,
