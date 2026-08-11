@@ -21,3 +21,5 @@ artifacts/*
 
 checkpoints/
 processed_data/
+
+*.egg-info/
